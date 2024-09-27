@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/access/AccessControl.sol";
+
+interface IOracle {
+    function analyzeData(uint256[] calldata sensorIds) external returns (bytes32[] memory dataHashes, bool[] memory anomalies);
+}
+
+/**
+ * @title HealthMonitoring
+ * @dev This contract monitors the health of a structure using sensor data and machine learning oracle.
+ */
+contract HealthMonitoring is AccessControl {
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+
+    // Event to notify about the health monitoring results
+    event HealthDataProcessed(bytes32[] indexed dataHashes, bool[] anomalies);
+
+    // Oracle contract for fetching sensor data
+    IOracle public oracle;
+
+    constructor(address oracleAddress) {
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(ADMIN_ROLE, msg.sender);
+        oracle = IOracle(oracleAddress);
+    }
+
+    /**
+     * @dev Processes health data for multiple sensors.
+     * @param sensorIds The IDs of the sensors to analyze.
+     */
+    function processHealthData(uint256[] calldata sensorIds) public {
+        require(hasRole(ADMIN_ROLE, msg.sender), "Only admin can process health data");
+
+        (bytes32[] memory dataHashes, bool[] memory anomalies) = oracle.analyzeData(sensorIds);
+        
+        emit HealthDataProcessed(dataHashes, anomalies);
+    }
+}
