@@ -1,0 +1,19 @@
+CONTRACT HealthMonitoring
+
+    CONSTANT ADMIN_ROLE = "ADMIN_ROLE"
+
+    EVENT HealthDataProcessed(dataHashes, anomalies)
+
+    FUNCTION constructor(oracleAddress):
+        GRANT DEFAULT_ADMIN_ROLE TO msg.sender
+        GRANT ADMIN_ROLE TO msg.sender
+        SET oracle = IOracle(oracleAddress)
+
+    FUNCTION processHealthData(sensorIds):
+        REQUIRE hasRole(ADMIN_ROLE, msg.sender)  // Only admin can process health data
+
+        // Call the oracle to analyze data
+        (dataHashes, anomalies) = oracle.analyzeData(sensorIds)
+
+        // Emit the event with results
+        EMIT HealthDataProcessed(dataHashes, anomalies)
