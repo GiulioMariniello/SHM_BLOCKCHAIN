@@ -1,0 +1,63 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/access/AccessControl.sol";
+
+contract AlertManagement is AccessControl {
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+
+    // Structure to represent an alert
+    struct Alert {
+        uint256 id;
+        uint256 severity; // 0: Inspection, 1: Caution, 2: Immediate Action
+        bool isActive;
+        string message;
+    }
+
+    mapping(uint256 => Alert) public alerts;
+    uint256 public alertCounter;
+
+    event AlertCreated(uint256 indexed alertId, uint256 severity, string message);
+    event AlertResolved(uint256 indexed alertId);
+
+    constructor() {
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(ADMIN_ROLE, msg.sender);
+    }
+
+    /**
+     * @dev Creates an alert with the specified severity and message.
+     * @param severity The severity of the alert (0, 1, or 2).
+     * @param message The alert message.
+     */
+    function createAlert(uint256 severity, string memory message) public {
+        require(hasRole(ADMIN_ROLE, msg.sender), "Only admin can create alerts");
+        require(severity <= 2, "Invalid severity level");
+
+        alertCounter++;
+        alerts[alertCounter] = Alert(alertCounter, severity, true, message);
+        emit AlertCreated(alertCounter, severity, message);
+    }
+
+    /**
+     * @dev Resolves an alert by ID.
+     * @param alertId The ID of the alert to resolve.
+     */
+    function resolveAlert(uint256 alertId) public {
+        require(hasRole(ADMIN_ROLE, msg.sender), "Only admin can resolve alerts");
+        require(alerts[alertId].isActive, "Alert is not active");
+
+        alerts[alertId].isActive = false;
+        emit AlertResolved(alertId);
+    }
+
+    /**
+     * @dev Gets the details of an alert by ID.
+     * @param alertId The ID of the alert.
+     * @return The alert details.
+     */
+    function getAlert(uint256 alertId) public view returns (uint256, uint256, bool, string memory) {
+        Alert memory alert = alerts[alertId];
+        return (alert.id, alert.severity, alert.isActive, alert.message);
+    }
+}
