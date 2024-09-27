@@ -1,0 +1,58 @@
+CONTRACT StructuralMonitoring
+
+    ROLE ADMIN_ROLE
+
+    STRUCT SensorParameters
+        UINT max
+        UINT min
+        UINT maxError
+        UINT sampleCount
+        UINT maxAutoDiag
+        UINT minAutoDiag
+
+    STRUCT DataRecord
+        BYTES32 dataHash
+        BOOL hasAnomaly
+
+    MAP UINT -> SensorParameters sensorParameters
+    MAP UINT -> DataRecord dataRecords
+    UINT lastTimestamp
+    INTERFACE IOracle oracle
+
+    EVENT DataValidated(BYTES32 dataHash, BOOL hasAnomaly, UINT timestamp)
+
+    FUNCTION constructor(ADDRESS oracleAddress)
+        GRANT DEFAULT_ADMIN_ROLE TO msg.sender
+        GRANT ADMIN_ROLE TO msg.sender
+        SET oracle TO IOracle(oracleAddress)
+
+    FUNCTION initializeSensorParameters(UINT sensorId, UINT max, UINT min, UINT maxError, UINT sampleCount, UINT maxAutoDiag, UINT minAutoDiag)
+        REQUIRE hasRole(ADMIN_ROLE, msg.sender)
+        SET sensorParameters[sensorId] TO SensorParameters(max, min, maxError, sampleCount, maxAutoDiag, minAutoDiag)
+
+    FUNCTION validateFromOracle(UINT sensorId)
+        (UINT samplingFrequency, UINT maxValue, UINT minValue, UINT anomalyCount, UINT startTime, UINT endTime, UINT autoDiagValue, BYTES32 dataHash) 
+        = oracle.getSensorData(sensorId)
+
+        BOOL hasAnomaly = FALSE
+
+        IF startTime <= lastTimestamp THEN
+            SET hasAnomaly TO TRUE
+
+        IF maxValue > sensorParameters[sensorId].max OR 
+           minValue < sensorParameters[sensorId].min OR 
+           anomalyCount > sensorParameters[sensorId].maxError OR 
+           (samplingFrequency * 600) != sensorParameters[sensorId].sampleCount OR 
+           autoDiagValue < sensorParameters[sensorId].minAutoDiag OR 
+           autoDiagValue > sensorParameters[sensorId].maxAutoDiag THEN
+            SET hasAnomaly TO TRUE
+
+        // Salva sempre l'hash e lo stato dell'anomalia
+        SET dataRecords[sensorId] TO DataRecord(dataHash, hasAnomaly)
+
+        // Emetti evento per registrare l'operazione
+        EMIT DataValidated(dataHash, hasAnomaly, endTime)
+
+        // Aggiorna il timestamp solo se non ci sono anomalie
+        IF NOT hasAnomaly THEN
+            SET lastTimestamp TO endTime
