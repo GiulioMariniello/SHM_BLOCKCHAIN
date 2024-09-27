@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/utils/Strings.sol";
 
 interface IOracle {
     function getSensorData(uint sensorId) external view returns (
@@ -17,60 +16,39 @@ interface IOracle {
     );
 }
 
-/**
- * @title StructuralMonitoring
- * @dev This contract manages the monitoring of structural health data.
- * It checks the quality and originality of sensor data before recording the data hash on the blockchain.
- * The oracle serves as the validator and submits data for verification.
- */
 contract StructuralMonitoring is AccessControl {
-    // Role definitions for access control
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
-    // Structure for sensor reference parameters
     struct SensorParameters {
-        uint max;            // Maximum acceptable value
-        uint min;            // Minimum acceptable value
-        uint maxError;       // Maximum allowable error percentage
-        uint sampleCount;    // Expected number of samples in 10 minutes
-        uint maxAutoDiag;    // Maximum self-diagnostic parameter value
-        uint minAutoDiag;    // Minimum self-diagnostic parameter value
+        uint max;
+        uint min;
+        uint maxError;
+        uint sampleCount;
+        uint maxAutoDiag;
+        uint minAutoDiag;
     }
 
-    // Mapping of sensor ID to its reference parameters
     mapping(uint => SensorParameters) public sensorParameters;
 
-    // Last recorded timestamp for continuity check
-    uint public lastTimestamp;
+    // Registrazione delle anomalie con hash
+    struct DataRecord {
+        bytes32 dataHash;
+        bool hasAnomaly;
+    }
 
-    // Oracle contract for fetching sensor data
+    mapping(uint => DataRecord) public dataRecords;
+
+    uint public lastTimestamp;
     IOracle public oracle;
 
-    // Event to notify the successful storage of a data hash
-    event DataHashStored(bytes32 indexed dataHash, uint indexed timestamp);
-    event DataValidated(bytes32 indexed dataHash, uint indexed timestamp, bool success);
-    event DataSavedToIPFS(string indexed ipfsHash, uint indexed timestamp);
+    event DataValidated(bytes32 indexed dataHash, bool hasAnomaly, uint indexed timestamp);
 
-    /**
-     * @dev Constructor to set up roles and the initial oracle address.
-     * @param oracleAddress The address of the oracle contract to fetch sensor data.
-     */
     constructor(address oracleAddress) {
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender); // Default admin role for the deployer
-        _grantRole(ADMIN_ROLE, msg.sender);         // Assign deployer as an admin
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(ADMIN_ROLE, msg.sender);
         oracle = IOracle(oracleAddress);
     }
 
-    /**
-     * @dev Initializes the reference parameters for a specific sensor.
-     * @param sensorId The ID of the sensor.
-     * @param max The maximum acceptable value.
-     * @param min The minimum acceptable value.
-     * @param maxError The maximum allowable error percentage.
-     * @param sampleCount The expected number of samples in 10 minutes.
-     * @param maxAutoDiag The maximum self-diagnostic parameter value.
-     * @param minAutoDiag The minimum self-diagnostic parameter value.
-     */
     function initializeSensorParameters(
         uint sensorId,
         uint max,
@@ -84,12 +62,7 @@ contract StructuralMonitoring is AccessControl {
         sensorParameters[sensorId] = SensorParameters(max, min, maxError, sampleCount, maxAutoDiag, minAutoDiag);
     }
 
-    /**
-     * @dev Validates data from the oracle and stores the result.
-     * @param sensorId The ID of the sensor to validate.
-     * @param ipfsHash The IPFS hash of the valid data.
-     */
-    function validateFromOracle(uint sensorId, string memory ipfsHash) public {
+    function validateFromOracle(uint sensorId) public {
         (
             uint samplingFrequency, 
             uint maxValue, 
@@ -101,32 +74,33 @@ contract StructuralMonitoring is AccessControl {
             bytes32 dataHash
         ) = oracle.getSensorData(sensorId);
 
-        // Check timestamp continuity
-        require(startTime == lastTimestamp + 1, "Timestamp is not consecutive.");
-        
-        // Retrieve the sensor's parameters
-        SensorParameters memory params = sensorParameters[sensorId];
-        
-        // Validate parameters against received data
-        bool success = true;
-        if (
-            maxValue > params.max || 
-            minValue < params.min || 
-            anomalyCount > params.maxError || 
-            (samplingFrequency * 600) != params.sampleCount || 
-            autoDiagValue < params.minAutoDiag || 
-            autoDiagValue > params.maxAutoDiag
-        ) {
-            success = false;
-            emit DataHashStored(dataHash, endTime);  // Store invalid data hash on-chain
-        } else {
-            // Store valid data hash on IPFS
-            emit DataSavedToIPFS(ipfsHash, endTime);
+        bool hasAnomaly = false;
+
+        // Controllo di anomalia
+        if (startTime <= lastTimestamp) {
+            hasAnomaly = true;
         }
 
-        // Update last timestamp
-        lastTimestamp = endTime;
+        if (
+            maxValue > sensorParameters[sensorId].max || 
+            minValue < sensorParameters[sensorId].min || 
+            anomalyCount > sensorParameters[sensorId].maxError || 
+            (samplingFrequency * 600) != sensorParameters[sensorId].sampleCount || 
+            autoDiagValue < sensorParameters[sensorId].minAutoDiag || 
+            autoDiagValue > sensorParameters[sensorId].maxAutoDiag
+        ) {
+            hasAnomaly = true;
+        }
 
-        emit DataValidated(dataHash, endTime, success);
+        // Salva sempre l'hash con lo stato dell'anomalia
+        dataRecords[sensorId] = DataRecord(dataHash, hasAnomaly);
+        
+        // Emetti un evento per registrare l'operazione
+        emit DataValidated(dataHash, hasAnomaly, endTime);
+
+        // Aggiorna il timestamp solo se non ci sono anomalie
+        if (!hasAnomaly) {
+            lastTimestamp = endTime;
+        }
     }
 }
