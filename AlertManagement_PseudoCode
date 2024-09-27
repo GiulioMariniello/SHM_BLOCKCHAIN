@@ -1,0 +1,45 @@
+CONTRACT AlertManagement
+
+    CONSTANT ADMIN_ROLE = "ADMIN_ROLE"
+
+    STRUCT Alert:
+        id: UINT256
+        severity: UINT256  // 0: Inspection, 1: Caution, 2: Immediate Action
+        isActive: BOOLEAN
+        message: STRING
+
+    MAPPING alerts: UINT256 -> Alert
+    UINT256 alertCounter
+
+    EVENT AlertCreated(alertId, severity, message)
+    EVENT AlertResolved(alertId)
+
+    FUNCTION constructor():
+        GRANT DEFAULT_ADMIN_ROLE TO msg.sender
+        GRANT ADMIN_ROLE TO msg.sender
+
+    FUNCTION createAlert(severity, message):
+        REQUIRE hasRole(ADMIN_ROLE, msg.sender)  // Only admin can create alerts
+        REQUIRE severity <= 2  // Valid severity level
+
+        // Increment alert counter and create alert
+        alertCounter = alertCounter + 1
+        alerts[alertCounter] = Alert(alertCounter, severity, true, message)
+
+        // Emit alert creation event
+        EMIT AlertCreated(alertCounter, severity, message)
+
+    FUNCTION resolveAlert(alertId):
+        REQUIRE hasRole(ADMIN_ROLE, msg.sender)  // Only admin can resolve alerts
+        REQUIRE alerts[alertId].isActive  // Alert must be active
+
+        // Mark alert as resolved
+        alerts[alertId].isActive = false
+
+        // Emit alert resolution event
+        EMIT AlertResolved(alertId)
+
+    FUNCTION getAlert(alertId):
+        // Retrieve and return details of the alert
+        alert = alerts[alertId]
+        RETURN (alert.id, alert.severity, alert.isActive, alert.message)
